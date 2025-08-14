@@ -50,7 +50,7 @@ class Task:
                 os.makedirs(dirname, 0o777)
             raw_dsp_files.append((raw_file, dsp_file))
 
-        with ProcessPoolExecutor(10) as executor:
+        with ProcessPoolExecutor(12) as executor:
             run_me = partial(self.run_single_x, use_sipms=use_sipms, force=force)
             for flag in executor.map(run_me, raw_dsp_files):
                 if flag:
