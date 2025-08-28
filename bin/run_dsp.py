@@ -8,25 +8,45 @@ import argparse
 from glob import glob
 from concurrent.futures import ProcessPoolExecutor
 from functools import partial
+import re
 
 u = pint.get_application_registry()
 
-all_sipms = ["S061", "S055", "S017", "S083", "S073", "S071", "S070", "S067", "S068", "S029", 
-             "S042", "S041", "S023", "S030", "S031", "S002", "S003", "S032", "S036", "S094", 
-             "S098", "S008", "S058", "S057", "S095", "S099", "S065", "S087", "S082", "S046", 
-             "S047", "S011", "S012", "S020", "S080", "S026", "S025", "S015", "S043", "S040", 
-             "S048", "S049", "S053", "S052", "S050", "S051", "S085", "S086", "S037", "S007"]
+try:
+    from legendmeta import LegendMetadata
+except ImportError:
+    pass
+
+def get_timestamp_from_filename(filename: str) -> str | None:
+    match = re.search(r"\d{8}T\d{6}Z", filename)
+    return match.group(0) if match else None
+
+def get_all_SiPMs(timestamp: str | None, metadata_dir: str | None) -> list[str] | str:
+    if timestamp is not None and metadata_dir is not None:
+        try:
+            lmeta = LegendMetadata(metadata_dir) # type: ignore
+            chmap = lmeta.channelmap(timestamp)
+            chmap_sipm = chmap.map("system", unique=False).spms
+            raw_keys = chmap_sipm.map("analysis.usability", unique=False).on.map("daq.rawid").keys()
+        except NameError:
+            print("WARNING: Failed to get SiPM list from metadata: pylegendmeta not installed")
+        else: 
+            return [f"ch{rawkey}" for rawkey in raw_keys]
+    if metadata_dir is not None and timestamp is None:
+        print("WARNING: Failed to get valid timestamp.")
+    return "S*" # wildcard as fallback
 
 class Task:
     def __init__(self, config_file):
         self.config_file = config_file
 
-    def run_single(self, raw_file: str, dsp_file: str, *, use_sipms:list[str]|None = None, force: bool) -> bool:
+    def run_single(self, raw_file: str, dsp_file: str, *, use_sipms:list[str] | str | None = None, metadata_dir:str|None, force: bool) -> bool:
         if use_sipms is None:
-            use_sipms = all_sipms
+            use_sipms = get_all_SiPMs(get_timestamp_from_filename(raw_file), metadata_dir)
         if not force and os.path.exists(dsp_file):
             return False
         print("Calling build_dsp for", raw_file, "->", dsp_file, "with config", self.config_file)
+        #print("    use SiPM keys:", use_sipms)
         build_dsp(
             raw_file,
             dsp_file,
@@ -38,10 +58,10 @@ class Task:
     
     #stupid python does not want to multi-process lambdas...
     def run_single_x(self, raw_dsp_file: tuple[str, str], *, 
-                     use_sipms:list[str]|None = None, force: bool) -> bool:
-        return self.run_single(raw_dsp_file[0], raw_dsp_file[1], use_sipms=use_sipms, force=force)
+                     use_sipms:list[str]|None = None, metadata_dir:str|None, force: bool) -> bool:
+        return self.run_single(raw_dsp_file[0], raw_dsp_file[1], use_sipms=use_sipms, metadata_dir=metadata_dir, force=force)
     
-    def run_all(self, raw_dir, dsp_dir, *, use_sipms:list[str]|None = None, force: bool) -> int:
+    def run_all(self, raw_dir, dsp_dir, *, use_sipms:list[str]|None = None, metadata_dir:str|None, force: bool) -> int:
         ret: int = 0
         raw_dsp_files: list[tuple[str, str]] = []
         for raw_file in glob(raw_dir+"/**/*.lh5", recursive=True):
@@ -51,7 +71,7 @@ class Task:
             raw_dsp_files.append((raw_file, dsp_file))
 
         with ProcessPoolExecutor(12) as executor:
-            run_me = partial(self.run_single_x, use_sipms=use_sipms, force=force)
+            run_me = partial(self.run_single_x, use_sipms=use_sipms, metadata_dir=metadata_dir, force=force)
             for flag in executor.map(run_me, raw_dsp_files):
                 if flag:
                     ret += 1
@@ -71,6 +91,7 @@ if __name__ == "__main__":
     parser.add_argument('--rawdir', help='The raw directory (where the raw data is stored (lh5))', required=True)
     parser.add_argument('--dspdir', help='The dsp directory', required=True)
     parser.add_argument('--config', help='DSP config file', required=True)
+    parser.add_argument('--metadata', help='Metadata directory', default=None, type=str)
     parser.add_argument('--sipms', help='which SiPMs to process. Defaults to all.', nargs='+')
     #parser.add_argument('--force', action='store_true', help='Overwrite potentially existing raw data')
 
@@ -78,6 +99,6 @@ if __name__ == "__main__":
     if not os.path.isfile(args.config):
         raise RuntimeError(f"No file: {args.config}")
     t = Task(args.config)
-    num = t.run_all(args.rawdir, args.dspdir, use_sipms=args.sipms, force=True)
+    num = t.run_all(args.rawdir, args.dspdir, use_sipms=args.sipms, metadata_dir=args.metadata, force=True)
     print(f"Finished processing {num} files.")
     
