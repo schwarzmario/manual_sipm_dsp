@@ -25,11 +25,11 @@ def main():
 
     if args.remote_prefix is None:
         if args.tier == 'raw':
-            args.remote_prefix = '/data2/public/prodenv/prod-blind/ref-raw/generated/tier/'
+            args.remote_prefix = '/data2/public/prodenv/prod-blind/ref-raw/generated/tier'
         else:
-            args.remote_prefix = '/data2/public/prodenv/prod-blind/tmp-auto/generated/tier/'
+            args.remote_prefix = '/data2/public/prodenv/prod-blind/tmp-auto/generated/tier'
 
-    remote_path = f"{args.remote_host}:{args.remote_prefix}{args.tier}/{args.type}/{args.period}/{args.run}/*"
+    remote_path = f"{args.remote_host}:{args.remote_prefix}/{args.tier}/{args.type}/{args.period}/{args.run}/*"
     local_path = f"{args.local_prefix}/{args.tier}/{args.type}/{args.period}/{args.run}"
 
     print(f"Syncing from {remote_path} to {local_path}")
