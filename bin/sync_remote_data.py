@@ -3,6 +3,7 @@
 import subprocess
 import argparse
 import sys
+import os
 
 def main():
     parser = argparse.ArgumentParser(description='Sync files from remote directory to local using rsync.')
@@ -45,6 +46,8 @@ def main():
         print(" ".join(cmd))
         print("No files were transferred.")
         return
+
+    os.makedirs(local_path, exist_ok=True)
 
     try:
         subprocess.run(cmd, check=True)
