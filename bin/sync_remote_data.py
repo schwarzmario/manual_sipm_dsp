@@ -9,7 +9,7 @@ def main():
     parser.add_argument('--remote-host', default='legend-login1',
                         help='Remote host (default: legend-login1)')
     parser.add_argument('--remote-prefix', default=None,
-                        help='Remote path prefix (if not provided, defaults to /data2/public/prodenv/prod-blind/tmp-auto/generated/tier/ for non-raw tiers or /data2/public/prodenv/prod-blind/ref-raw/generated/tier/ for raw tier)')
+                        help='Remote path prefix (if not provided, defaults to /data1/shared/l200-p13-v2.1/generated/tier for period p13, or /data2/public/prodenv/prod-blind/tmp-auto/generated/tier/ for non-raw tiers or /data2/public/prodenv/prod-blind/ref-raw/generated/tier/ for raw tier otherwise)')
     parser.add_argument('--local-prefix', default='/mnt/atlas02/projects/legend/sipm_qc/data/tier',
                         help='Local path prefix (default: /mnt/atlas02/projects/legend/sipm_qc/data/tier)')
     parser.add_argument('--tier', required=True,
@@ -24,7 +24,9 @@ def main():
     args = parser.parse_args()
 
     if args.remote_prefix is None:
-        if args.tier == 'raw':
+        if args.period == 'p13':
+            args.remote_prefix = '/data1/shared/l200-p13-v2.1/generated/tier'
+        elif args.tier == 'raw':
             args.remote_prefix = '/data2/public/prodenv/prod-blind/ref-raw/generated/tier'
         else:
             args.remote_prefix = '/data2/public/prodenv/prod-blind/tmp-auto/generated/tier'
