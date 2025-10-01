@@ -20,6 +20,8 @@ def main():
                         help='Period (e.g., p15)')
     parser.add_argument('--run', required=True,
                         help='Run (e.g., r004)')
+    parser.add_argument('--dry-run', action='store_true',
+                        help='Dry run: print paths and command without performing the sync')
 
     args = parser.parse_args()
 
@@ -37,6 +39,13 @@ def main():
     print(f"Syncing from {remote_path} to {local_path}")
 
     cmd = ['rsync', '-hvPtzr', remote_path, local_path]
+
+    if args.dry_run:
+        print("Dry run - command that would be executed:")
+        print(" ".join(cmd))
+        print("No files were transferred.")
+        return
+
     try:
         subprocess.run(cmd, check=True)
         print("Sync completed successfully.")
