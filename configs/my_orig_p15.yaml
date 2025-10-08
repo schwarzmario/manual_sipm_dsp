@@ -1,0 +1,268 @@
+outputs:
+  - timestamp
+  - trigger_pos
+  - energy
+  - trigger_pos_dplms
+  - energy_dplms
+  - wf_mode
+  - wf_lower_hwhm
+  - wf_min
+  - wf_min_small
+  - curr_fwhm
+
+processors:
+  tp_min, tp_max, wf_min, wf_max:
+    description: find max and min of the waveform with corresponding time points
+    function: min_max
+    module: dspeed.processors
+    args:
+      - waveform_bit_drop
+      - tp_min
+      - tp_max
+      - wf_min
+      - wf_max
+    unit:
+      - ns
+      - ns
+      - ADC
+      - ADC
+  tp_min_small, tp_max_small, wf_min_small, wf_max_small:
+    description:
+      find max and min of the waveform with corresponding time points in a
+      window accounting for majority Ge t0 fluctuations
+    function: min_max
+    module: dspeed.processors
+    args:
+      - "waveform_bit_drop[round(45*us / waveform_bit_drop.period) : round(55*us /
+        waveform_bit_drop.period)]"
+      - tp_min_small
+      - tp_max_small
+      - wf_min_small
+      - wf_max_small
+    unit:
+      - ns
+      - ns
+      - ADC
+      - ADC
+  wf_hist , wf_borders:
+    description: projection histogram of waveform onto the adc-axis, around mode
+    function: histogram_around_mode
+    module: dspeed.processors
+    args:
+      - waveform_bit_drop
+      - np.nan
+      - 1
+      - wf_hist(101)
+      - wf_borders(102)
+    unit: [ADC, ADC]
+
+  wf_mode , wf_lower_hwhm:
+    description: Mode and lower hwhm (tow. lower ADC edge)
+    function: histogram_peakstats
+    module: dspeed.processors
+    args:
+      - wf_hist
+      - wf_borders
+      - np.nan
+      - 0
+      - 0
+      - wf_mode
+      - wf_lower_hwhm
+    unit: [ADC, ADC]
+
+  wf_gaus:
+    description: Gaussian filtered waveform
+    function: gaussian_filter1d
+    module: dspeed.processors
+    args:
+      - waveform_bit_drop
+      - >-
+        wf_gaus(
+          len(waveform_bit_drop),
+          period=waveform_bit_drop.period,
+          offset=waveform_bit_drop.offset
+        )
+    init_args:
+      - db.gauss.width
+    defaults:
+      db.gauss.width: 4
+    unit: ADC
+
+  wf_curr:
+    description: First derivative of gaussian filtered waveform
+    function: avg_current
+    module: dspeed.processors
+    args:
+      - wf_gaus
+      - db.current.width
+      - >-
+        wf_curr(
+          len(wf_gaus) - db.current.width,
+          period=wf_gaus.period,
+          offset=wf_gaus.offset + db.current.width // 2 * wf_gaus.period
+        )
+    defaults:
+      db.current.width: 2
+    unit: ADC/sample
+
+  curr_hist , curr_borders:
+    description: projection histogram of current waveform onto the adc-axis
+    function: histogram_around_mode
+    module: dspeed.processors
+    args:
+      - wf_curr
+      - 0
+      - 0.02
+      - curr_hist(101)
+      - curr_borders(102)
+    unit: [ADC, ADC]
+
+  curr_mode, curr_fwhm:
+    description:
+      Real FWHM and mode of projection histogram of current waveform onto the
+      adc-axis
+    function: histogram_peakstats
+    module: dspeed.processors
+    args:
+      - curr_hist
+      - curr_borders
+      - 0
+      - 0
+      - 0
+      - curr_mode
+      - curr_fwhm
+    unit: [ADC, ADC, ""]
+
+  trigger_pos, vt_min_out, n_max_out, n_min_out:
+    description:
+      Search for potential pe pulse candidates in current waveform by local
+      extrema search
+    function: get_multi_local_extrema
+    module: dspeed.processors
+    args:
+      - wf_curr
+      - db.extrema.delta_max * curr_fwhm
+      - db.extrema.delta_min * curr_fwhm
+      - db.extrema.search_dir
+      - db.extrema.abs_max * curr_fwhm
+      - db.extrema.abs_min
+      - trigger_pos(100, vector_len=n_max_out)
+      - vt_min_out(100, vector_len=n_max_out)
+      - n_max_out
+      - n_min_out
+    defaults:
+      db.extrema.abs_max: 1.4
+      db.extrema.abs_min: 0
+      db.extrema.delta_max: 2.2
+      db.extrema.delta_min: 2.2
+      db.extrema.search_dir: 3
+    unit: [ns, ns, "", ""]
+
+  energy:
+    description: Amplitude pickoff of found pe pulses
+    function: multi_a_filter
+    module: dspeed.processors
+    args:
+      - wf_curr
+      - trigger_pos
+      - energy(vector_len=len(trigger_pos))
+    unit: ADC
+
+  wf_diff:
+    description: First derivative of the waveform
+    function: avg_current
+    module: dspeed.processors
+    args:
+      - waveform_bit_drop
+      - 1
+      - wf_diff(len(waveform_bit_drop) - 1, grid=waveform_bit_drop.grid)
+    unit: ADC/sample
+
+  wf_dplms:
+    description: Apply DPLMS convolution to current waveform
+    function: convolve_wf
+    module: dspeed.processors
+    args:
+      - wf_diff
+      - db.dplms.coefficients
+      - "'v'"
+      - wf_dplms(len(waveform_bit_drop)-db.dplms.length, grid=waveform_bit_drop.grid)
+    unit: ADC/sample
+    defaults:
+      db.dplms.length: 2
+      db.dplms.coefficients: "[1,1]"
+
+  h_weights_d , h_borders_d:
+    function: histogram
+    module: dspeed.processors
+    args:
+      - wf_dplms
+      - h_weights_d(100)
+      - h_borders_d(101)
+    unit: [ADC, ADC]
+
+  fwhm_d, idx_out_d, max_out_d:
+    function: histogram_stats
+    module: dspeed.processors
+    args:
+      - h_weights_d
+      - h_borders_d
+      - idx_out_d
+      - max_out_d
+      - fwhm_d
+      - np.nan
+    unit: [ADC, ADC, ""]
+
+  trigger_pos_candidate_d, vt_min_out_d, n_max_out_d, n_min_out_d:
+    description:
+      Search for potential pe pulse candidates in DPLMS current waveform by
+      local extrema search
+    function: get_multi_local_extrema
+    module: dspeed.processors
+    args:
+      - wf_dplms
+      - db.dplms.delta_max * fwhm_d
+      - db.dplms.delta_min * fwhm_d
+      - db.dplms.search_dir
+      - db.dplms.abs_max * fwhm_d
+      - db.dplms.abs_min
+      - trigger_pos_candidate_d(100, vector_len=n_max_out_d)
+      - vt_min_out_d(100, vector_len=n_max_out_d)
+      - n_max_out_d
+      - n_min_out_d
+    defaults:
+      db.dplms.abs_max: 2
+      db.dplms.abs_min: np.inf
+      db.dplms.delta_max: 1
+      db.dplms.delta_min: 1
+      db.dplms.search_dir: 3
+    unit: [ns, ns, "", ""]
+
+  trigger_pos_dplms, no_out_d:
+    description:
+      Apply signal to noise ratio filter to DPLMS pe candidates to filter out
+      noise candidates
+    function: peak_snr_threshold
+    module: dspeed.processors
+    args:
+      - wf_dplms
+      - trigger_pos_candidate_d
+      - db.dplms.snr_ratio
+      - db.dplms.snr_width
+      - trigger_pos_dplms(vector_len=no_out_d)
+      - no_out_d
+    defaults:
+      db.dplms.snr_ratio: 0.4
+      db.dplms.snr_width: 20
+    unit: [ns, ""]
+
+  energy_dplms:
+    description: amplitude pickoff of found DPLMS pe pulses
+    function: multi_a_filter
+    module: dspeed.processors
+    args:
+      - wf_dplms
+      - trigger_pos_dplms
+      - energy_dplms(vector_len=len(trigger_pos_dplms))
+    unit:
+      - ADC

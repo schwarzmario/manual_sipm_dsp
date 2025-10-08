@@ -52,6 +52,7 @@ class Task:
             dsp_file,
             dsp_config=self.config_file,
             lh5_tables=use_sipms,
+            base_group="", # fixed it for p13 data; p15 didn't need this
             write_mode="r"  # used to overwrite an existing file
         )
         return True
@@ -99,6 +100,14 @@ if __name__ == "__main__":
     if not os.path.isfile(args.config):
         raise RuntimeError(f"No file: {args.config}")
     t = Task(args.config)
-    num = t.run_all(args.rawdir, args.dspdir, use_sipms=args.sipms, metadata_dir=args.metadata, force=True)
+
+    num = 0
+    if os.path.isdir(args.rawdir):
+        num = t.run_all(args.rawdir, args.dspdir, use_sipms=args.sipms, metadata_dir=args.metadata, force=True)
+    elif os.path.isfile(args.rawdir) and os.path.isdir(args.dspdir):
+        dsp_file = t.get_dsp_filename(raw_file=args.rawdir, raw_dir=os.path.dirname(args.rawdir), dsp_dir=args.dspdir)
+        if not os.path.exists(dirname := os.path.dirname(dsp_file)):
+            os.makedirs(dirname, 0o777)
+        num = int(t.run_single(args.rawdir, dsp_file, use_sipms=args.sipms, metadata_dir=args.metadata, force=True))
     print(f"Finished processing {num} files.")
-    
+
