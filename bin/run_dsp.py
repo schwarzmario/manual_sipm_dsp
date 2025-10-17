@@ -103,6 +103,8 @@ if __name__ == "__main__":
 
     num = 0
     if os.path.isdir(args.rawdir):
+        if not os.path.exists(args.dspdir):
+            os.makedirs(args.dspdir, 0o777)
         num = t.run_all(args.rawdir, args.dspdir, use_sipms=args.sipms, metadata_dir=args.metadata, force=True)
     elif os.path.isfile(args.rawdir) and os.path.isdir(args.dspdir):
         dsp_file = t.get_dsp_filename(raw_file=args.rawdir, raw_dir=os.path.dirname(args.rawdir), dsp_dir=args.dspdir)
